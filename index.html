@@ -1,1 +1,260 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mijn voetbalgame</title>
+<style>
+  body {
+    margin: 0;
+    background: #102330;
+    color: white;
+    text-align: center;
+    font-family: Arial, sans-serif;
+  }
+  h1 { margin-bottom: 10px; }
+  canvas {
+    display: block;
+    width: 96%;
+    max-width: 900px;
+    margin: 20px auto;
+    border: 3px solid white;
+    background: #288348;
+  }
+  button {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    background: #c4ff69;
+    font-size: 18px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<h1>⚽ Mijn voetbalgame</h1>
+<p>Beweeg met de pijltjes of WASD. Schiet met spatie.</p>
+<h2 id="score">Jij 0 — 0 Computer</h2>
+<button onclick="opnieuw()">Nieuwe wedstrijd</button>
+<canvas id="veld" width="900" height="500"></canvas>
+<p id="melding">Jij bent blauw. Scoor in het rechterdoel!</p>
 
+<script>
+const canvas = document.getElementById("veld");
+const pen = canvas.getContext("2d");
+const toetsen = new Set();
+const jij = { x: 240, y: 250 };
+const tegenstander = { x: 660, y: 250 };
+const bal = { x: 450, y: 250, vx: 0, vy: 0 };
+
+let jouwScore = 0;
+let computerScore = 0;
+let richting = { x: 1, y: 0 };
+let vorigeTijd = 0;
+let schotWacht = 0;
+
+window.addEventListener("keydown", event => {
+  if (["ArrowUp", "ArrowDown", "ArrowLeft",
+       "ArrowRight", "Space"].includes(event.code)) {
+    event.preventDefault();
+  }
+  toetsen.add(event.code);
+});
+
+window.addEventListener("keyup", event => {
+  toetsen.delete(event.code);
+});
+
+window.addEventListener("blur", () => toetsen.clear());
+
+function aftrap() {
+  jij.x = 240;
+  jij.y = 250;
+  tegenstander.x = 660;
+  tegenstander.y = 250;
+  bal.x = 450;
+  bal.y = 250;
+  bal.vx = 0;
+  bal.vy = 0;
+  richting = { x: 1, y: 0 };
+}
+
+function opnieuw() {
+  jouwScore = 0;
+  computerScore = 0;
+  aftrap();
+  scoreBijwerken();
+  document.getElementById("melding").textContent =
+    "Jij bent blauw. Scoor in het rechterdoel!";
+}
+
+function scoreBijwerken() {
+  document.getElementById("score").textContent =
+    `Jij ${jouwScore} — ${computerScore} Computer`;
+}
+
+function begrens(getal, min, max) {
+  return Math.max(min, Math.min(max, getal));
+}
+
+function beweeg(speler, dx, dy, snelheid, dt) {
+  const lengte = Math.hypot(dx, dy) || 1;
+  speler.x = begrens(
+    speler.x + dx / lengte * snelheid * dt, 35, 865
+  );
+  speler.y = begrens(
+    speler.y + dy / lengte * snelheid * dt, 35, 465
+  );
+}
+
+function raakBal(speler, computer) {
+  let dx = bal.x - speler.x;
+  let dy = bal.y - speler.y;
+  let afstand = Math.hypot(dx, dy);
+
+  if (afstand < 28) {
+    if (afstand < 0.01) {
+      dx = computer ? -1 : 1;
+      dy = 0;
+      afstand = 1;
+    }
+
+    bal.x = speler.x + dx / afstand * 29;
+    bal.y = speler.y + dy / afstand * 29;
+
+    if (computer) {
+      const hoek = Math.atan2(250 - bal.y, -bal.x);
+      bal.vx = Math.cos(hoek) * 330;
+      bal.vy = Math.sin(hoek) * 330;
+    } else {
+      bal.vx = richting.x * 190;
+      bal.vy = richting.y * 190;
+    }
+  }
+}
+
+function update(dt) {
+  schotWacht = Math.max(0, schotWacht - dt);
+
+  const dx =
+    Number(toetsen.has("ArrowRight") || toetsen.has("KeyD")) -
+    Number(toetsen.has("ArrowLeft") || toetsen.has("KeyA"));
+
+  const dy =
+    Number(toetsen.has("ArrowDown") || toetsen.has("KeyS")) -
+    Number(toetsen.has("ArrowUp") || toetsen.has("KeyW"));
+
+  if (dx || dy) {
+    const lengte = Math.hypot(dx, dy);
+    richting = { x: dx / lengte, y: dy / lengte };
+    beweeg(jij, dx, dy, 230, dt);
+  }
+
+  beweeg(
+    tegenstander,
+    bal.x + 18 - tegenstander.x,
+    bal.y - tegenstander.y,
+    125,
+    dt
+  );
+
+  raakBal(jij, false);
+  raakBal(tegenstander, true);
+
+  if (
+    toetsen.has("Space") &&
+    schotWacht === 0 &&
+    Math.hypot(bal.x - jij.x, bal.y - jij.y) < 46
+  ) {
+    bal.vx = richting.x * 620;
+    bal.vy = richting.y * 620;
+    schotWacht = 0.3;
+  }
+
+  bal.x += bal.vx * dt;
+  bal.y += bal.vy * dt;
+  bal.vx *= Math.exp(-1.2 * dt);
+  bal.vy *= Math.exp(-1.2 * dt);
+
+  if (bal.y < 29 || bal.y > 471) {
+    bal.y = begrens(bal.y, 29, 471);
+    bal.vy *= -0.8;
+  }
+
+  if (bal.x < 29 || bal.x > 871) {
+    if (bal.y > 190 && bal.y < 310) {
+      const jijScoort = bal.x > 871;
+      if (jijScoort) jouwScore++;
+      else computerScore++;
+
+      document.getElementById("melding").textContent =
+        jijScoort ? "⚽ GOOOAL! Jij scoort!" :
+                    "De computer scoort. Pak hem terug!";
+      scoreBijwerken();
+      aftrap();
+    } else {
+      bal.x = begrens(bal.x, 29, 871);
+      bal.vx *= -0.8;
+    }
+  }
+}
+
+function cirkel(x, y, straal, kleur) {
+  pen.beginPath();
+  pen.arc(x, y, straal, 0, Math.PI * 2);
+  pen.fillStyle = kleur;
+  pen.fill();
+}
+
+function teken() {
+  for (let i = 0; i < 10; i++) {
+    pen.fillStyle = i % 2 ? "#288348" : "#2d9050";
+    pen.fillRect(i * 90, 0, 90, 500);
+  }
+
+  pen.strokeStyle = "#ffffffbb";
+  pen.lineWidth = 2;
+  pen.strokeRect(20, 20, 860, 460);
+
+  pen.beginPath();
+  pen.moveTo(450, 20);
+  pen.lineTo(450, 480);
+  pen.stroke();
+
+  pen.beginPath();
+  pen.arc(450, 250, 65, 0, Math.PI * 2);
+  pen.stroke();
+
+  pen.strokeRect(20, 145, 110, 210);
+  pen.strokeRect(770, 145, 110, 210);
+
+  pen.fillStyle = "#ffffff66";
+  pen.fillRect(0, 190, 20, 120);
+  pen.fillRect(880, 190, 20, 120);
+
+  cirkel(jij.x, jij.y, 19, "#279bff");
+  cirkel(tegenstander.x, tegenstander.y, 19, "#ff5353");
+
+  pen.fillStyle = "white";
+  pen.font = "bold 16px Arial";
+  pen.textAlign = "center";
+  pen.fillText("10", jij.x, jij.y + 6);
+  pen.fillText("9", tegenstander.x, tegenstander.y + 6);
+
+  cirkel(bal.x + 2, bal.y + 4, 9, "#00000044");
+  cirkel(bal.x, bal.y, 9, "white");
+  cirkel(bal.x, bal.y, 3, "#182331");
+}
+
+function frame(tijd) {
+  const dt = Math.min((tijd - vorigeTijd) / 1000, 0.03);
+  vorigeTijd = tijd;
+  update(dt);
+  teken();
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
